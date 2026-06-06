@@ -7,7 +7,7 @@ import httpx
 class OllamaClient:
     def __init__(self) -> None:
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.chat_model = os.getenv("OLLAMA_CHAT_MODEL", "qwen2.5-coder:7b")
+        self.chat_model = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b")
         self.embed_model = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 
     async def generate(self, prompt: str) -> str:
