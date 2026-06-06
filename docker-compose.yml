@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: devmind-postgres
+    environment:
+      POSTGRES_USER: devmind
+      POSTGRES_PASSWORD: devmind
+      POSTGRES_DB: devmind
+    ports:
+      - "5433:5432"
+    volumes:
+      - devmind_postgres:/var/lib/postgresql/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: devmind-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - devmind_qdrant:/qdrant/storage
+
+volumes:
+  devmind_postgres:
+  devmind_qdrant:
