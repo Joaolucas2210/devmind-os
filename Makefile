@@ -1,4 +1,4 @@
-.PHONY: up down logs ps api worker ingest test lint build ask
+.PHONY: up down logs ps api worker ingest test lint typecheck check build ask
 
 up:
 	docker compose up -d
@@ -29,6 +29,12 @@ test:
 
 lint:
 	uv run ruff check .
+
+typecheck:
+	uv run mypy apps packages tests
+
+check: lint typecheck test
+	docker compose config
 
 build:
 	@echo "No build configured yet"
