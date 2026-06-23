@@ -49,7 +49,7 @@ evolução estão documentados em
 - Ollama
 - Qdrant
 - PostgreSQL com pgvector
-- pytest e Ruff
+- pytest, Ruff e mypy
 - uv
 - Docker Compose
 
@@ -177,6 +177,8 @@ comandos quando quiser substituir os padrões.
 | `make ingest` | Indexa os documentos de `data/inbox`. |
 | `make test` | Executa os testes automatizados. |
 | `make lint` | Executa a análise estática com Ruff. |
+| `make typecheck` | Executa a checagem de tipos com mypy. |
+| `make check` | Executa lint, typecheck, testes e validação do Compose. |
 
 ## Estrutura do projeto
 
@@ -198,9 +200,7 @@ tests/                  # Testes automatizados
 Antes de abrir uma mudança:
 
 ```bash
-make test
-make lint
-docker compose config
+make check
 ```
 
 Mantenha as alterações pequenas, inclua testes para mudanças de comportamento
