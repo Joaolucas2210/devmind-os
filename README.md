@@ -38,6 +38,10 @@ O fluxo de consulta e o fluxo RAG são independentes nesta versão:
 2. `make ingest` lê documentos, cria chunks, gera embeddings e grava os vetores
    no Qdrant.
 
+A direção arquitetural, os critérios de qualidade e o plano incremental de
+evolução estão documentados em
+[Arquitetura e Roadmap de Implementação](docs/architecture-roadmap.md).
+
 ## Stack
 
 - Python 3.11+
