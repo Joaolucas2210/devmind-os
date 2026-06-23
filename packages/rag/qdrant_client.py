@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+
+from packages.shared.config import get_settings
 
 DEFAULT_COLLECTION_NAME = "devmind_documents"
 DEFAULT_QDRANT_URL = "http://localhost:6333"
@@ -25,14 +26,18 @@ class QdrantRagClient:
         url: str | None = None,
         collection_name: str | None = None,
     ) -> None:
+        settings = get_settings() if url is None or collection_name is None else None
         self.collection_name = (
             collection_name
-            or os.getenv("QDRANT_COLLECTION")
+            or (settings.qdrant_collection if settings is not None else None)
             or DEFAULT_COLLECTION_NAME
         )
-        self._client = QdrantClient(
-            url=url or os.getenv("QDRANT_URL", DEFAULT_QDRANT_URL)
+        effective_url = (
+            url
+            or (str(settings.qdrant_url) if settings is not None else None)
+            or DEFAULT_QDRANT_URL
         )
+        self._client = QdrantClient(url=effective_url.rstrip("/"))
 
     def ensure_collection(self, vector_size: int) -> None:
         if vector_size <= 0:
