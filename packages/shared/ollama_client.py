@@ -1,14 +1,28 @@
-import os
 from typing import Any
 
 import httpx
 
+from packages.shared.config import get_settings
+
 
 class OllamaClient:
-    def __init__(self) -> None:
-        self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.chat_model = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2:1b")
-        self.embed_model = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        chat_model: str | None = None,
+        embed_model: str | None = None,
+    ) -> None:
+        if base_url is None:
+            base_url = str(get_settings().ollama_base_url).rstrip("/")
+        if chat_model is None:
+            chat_model = get_settings().ollama_chat_model
+        if embed_model is None:
+            embed_model = get_settings().ollama_embed_model
+
+        self.base_url = base_url
+        self.chat_model = chat_model
+        self.embed_model = embed_model
 
     async def generate(self, prompt: str) -> str:
         async with httpx.AsyncClient(timeout=120) as client:

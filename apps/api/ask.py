@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from packages.shared.config import get_settings  # noqa: E402
 
 DEFAULT_API_BASE_URL = "http://localhost:8000"
 
@@ -24,9 +30,8 @@ def ask_api(
     timeout: float = 30,
     transport: httpx.BaseTransport | None = None,
 ) -> str:
-    api_base_url = (base_url or os.getenv("API_BASE_URL") or DEFAULT_API_BASE_URL).rstrip(
-        "/"
-    )
+    configured_base_url = base_url or str(get_settings().api_base_url)
+    api_base_url = (configured_base_url or DEFAULT_API_BASE_URL).rstrip("/")
 
     with httpx.Client(timeout=timeout, transport=transport) as client:
         response = client.post(f"{api_base_url}/ask", json={"question": question})
@@ -41,11 +46,12 @@ def ask_api(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else list(argv)
-    base_url = os.getenv("API_BASE_URL") or DEFAULT_API_BASE_URL
+    base_url = DEFAULT_API_BASE_URL
 
     try:
         question = _question_from_args(args)
-        answer = ask_api(question)
+        base_url = str(get_settings().api_base_url).rstrip("/")
+        answer = ask_api(question, base_url=base_url)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -12,12 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from packages.rag.chunking import (  # noqa: E402
-    DEFAULT_CHUNK_OVERLAP,
-    DEFAULT_CHUNK_SIZE,
-    chunk_text,
-)
+from packages.rag.chunking import chunk_text  # noqa: E402
 from packages.rag.qdrant_client import EmbeddedChunk, QdrantRagClient  # noqa: E402
+from packages.shared.config import Settings, get_settings  # noqa: E402
 from packages.shared.ollama_client import OllamaClient  # noqa: E402
 
 DEFAULT_INBOX_DIR = REPO_ROOT / "data" / "inbox"
@@ -46,20 +42,30 @@ async def ingest_inbox(
     chunk_overlap: int | None = None,
     embedder: Embedder | None = None,
     qdrant_client: ChunkStore | None = None,
+    settings: Settings | None = None,
 ) -> IngestSummary:
-    effective_chunk_size = chunk_size
-    if effective_chunk_size is None:
-        effective_chunk_size = _int_env("RAG_CHUNK_SIZE", DEFAULT_CHUNK_SIZE)
-    effective_chunk_overlap = chunk_overlap
-    if effective_chunk_overlap is None:
-        effective_chunk_overlap = _int_env(
-            "RAG_CHUNK_OVERLAP",
-            DEFAULT_CHUNK_OVERLAP,
-        )
+    effective_settings = settings or get_settings()
+    effective_chunk_size = (
+        chunk_size
+        if chunk_size is not None
+        else effective_settings.rag_chunk_size
+    )
+    effective_chunk_overlap = (
+        chunk_overlap
+        if chunk_overlap is not None
+        else effective_settings.rag_chunk_overlap
+    )
 
     documents = list(_iter_documents(inbox_dir))
-    ollama = embedder or OllamaClient()
-    qdrant = qdrant_client or QdrantRagClient()
+    ollama = embedder or OllamaClient(
+        base_url=str(effective_settings.ollama_base_url).rstrip("/"),
+        chat_model=effective_settings.ollama_chat_model,
+        embed_model=effective_settings.ollama_embed_model,
+    )
+    qdrant = qdrant_client or QdrantRagClient(
+        url=str(effective_settings.qdrant_url).rstrip("/"),
+        collection_name=effective_settings.qdrant_collection,
+    )
 
     embedded_chunks: list[EmbeddedChunk] = []
     files_ingested = 0
@@ -137,13 +143,6 @@ def _relative_file_path(path: Path) -> str:
 
 def _point_id(file_path: str, chunk_index: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{file_path}:{chunk_index}"))
-
-
-def _int_env(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return int(value)
 
 
 if __name__ == "__main__":
