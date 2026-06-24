@@ -12,21 +12,22 @@ de aumentar a complexidade.
 
 ## 2. Estado atual
 
-O DevMind OS possui dois fluxos independentes:
+O DevMind OS possui dois fluxos principais:
 
-1. o endpoint `POST /ask` envia a pergunta diretamente ao modelo de chat no
-   Ollama;
+1. o endpoint `POST /ask` busca contexto no Qdrant e envia prompt enriquecido
+   ao modelo de chat no Ollama;
 2. o worker de ingestão lê documentos locais, cria chunks, gera embeddings e
    grava os vetores no Qdrant.
 
 ```mermaid
 flowchart LR
     CLI[CLI] --> API[FastAPI]
+    API --> QDRANT[(Qdrant)]
     API --> CHAT[Ollama Chat]
 
     DOCS[data/inbox] --> INGEST[Worker de ingestão]
     INGEST --> EMBED[Ollama Embeddings]
-    INGEST --> QDRANT[(Qdrant)]
+    INGEST --> QDRANT
 
     POSTGRES[(PostgreSQL + pgvector<br/>provisionado, não utilizado)]
 ```
@@ -35,6 +36,7 @@ flowchart LR
 
 - API HTTP e CLI para perguntas.
 - Integração local com Ollama.
+- Recuperação de contexto no Qdrant para `/ask`.
 - Ingestão de Markdown e texto.
 - Chunking configurável.
 - Identificadores determinísticos de chunks.
@@ -45,9 +47,6 @@ flowchart LR
 
 ### Lacunas principais
 
-- A consulta não recupera os documentos indexados.
-- O endpoint HTTP instancia adaptadores de infraestrutura diretamente.
-- A configuração é lida de variáveis de ambiente em diferentes módulos.
 - A ingestão não remove chunks obsoletos nem controla versões de documentos.
 - Não existe registro persistente de documentos ou execuções de ingestão.
 - Não há avaliação objetiva da qualidade do RAG.

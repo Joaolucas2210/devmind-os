@@ -20,12 +20,18 @@ class FakeEmbedder:
 
 
 class FakeQdrantClient:
-    def __init__(self, points: list[models.ScoredPoint]) -> None:
+    def __init__(
+        self,
+        points: list[models.ScoredPoint],
+        *,
+        collection_exists: bool = True,
+    ) -> None:
         self.points = points
+        self._collection_exists = collection_exists
         self.query_kwargs: dict[str, Any] | None = None
 
     def collection_exists(self, collection_name: str) -> bool:
-        return True
+        return self._collection_exists
 
     def create_collection(self, **kwargs: Any) -> None:
         return None
@@ -170,5 +176,20 @@ def test_search_ignores_blank_query_without_external_calls() -> None:
     )
 
     assert asyncio.run(client.search("  \n", limit=3)) == []
+    assert embedder.texts == []
+    assert qdrant.query_kwargs is None
+
+
+def test_search_returns_empty_when_collection_is_missing() -> None:
+    embedder = FakeEmbedder()
+    qdrant = FakeQdrantClient([], collection_exists=False)
+    client = QdrantRagClient(
+        url="http://qdrant.test",
+        collection_name="docs",
+        embedder=embedder,
+        client=qdrant,
+    )
+
+    assert asyncio.run(client.search("status", limit=3)) == []
     assert embedder.texts == []
     assert qdrant.query_kwargs is None
