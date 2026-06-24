@@ -1,127 +1,240 @@
+<p align="center">
+  <img alt="DevMind OS" src="https://img.shields.io/badge/DevMind%20OS-Local%20RAG%20Assistant-1f6feb?style=for-the-badge">
+</p>
+
+<p align="center">
+  <img alt="Status: MVP" src="https://img.shields.io/badge/status-MVP-6f42c1?style=flat-square">
+  <img alt="Runtime: local first" src="https://img.shields.io/badge/runtime-local--first-1a7f37?style=flat-square">
+  <img alt="API: FastAPI" src="https://img.shields.io/badge/API-FastAPI-009485?style=flat-square">
+  <img alt="Vector store: Qdrant" src="https://img.shields.io/badge/vector%20store-Qdrant-d1247c?style=flat-square">
+  <img alt="Models: Ollama" src="https://img.shields.io/badge/models-Ollama-333333?style=flat-square">
+  <img alt="Quality: Ruff mypy pytest" src="https://img.shields.io/badge/quality-Ruff%20%7C%20mypy%20%7C%20pytest-0969da?style=flat-square">
+</p>
+
 # DevMind OS
 
-Assistente local e experimental para organizar conhecimento técnico e consultar
-modelos de linguagem sem enviar dados para provedores externos.
+DevMind OS is a local-first RAG assistant for indexing technical knowledge and
+answering questions with source-backed context. The project is an MVP focused on
+engineering discipline: typed configuration, explicit application boundaries,
+local model execution, retrieval evaluation, and reproducible validation.
 
-O projeto está em fase de MVP. Hoje ele oferece uma API de perguntas que
-recupera documentos indexados no Qdrant e usa o Ollama para gerar respostas
-com contexto local.
+The system does not send documents or prompts to hosted model providers by
+default. It runs with FastAPI, Ollama, Qdrant, and Docker Compose.
 
-## Capacidades atuais
+## What It Does Today
 
-- API HTTP com health check e respostas RAG via Qdrant e Ollama.
-- Cliente de linha de comando para consultar a API.
-- Ingestão de arquivos Markdown e texto.
-- Chunking configurável com sobreposição.
-- Geração local de embeddings via Ollama.
-- Armazenamento vetorial no Qdrant.
-- PostgreSQL com pgvector provisionado para evolução futura.
+| Capability | Status |
+| --- | --- |
+| HTTP API for questions | Available through `POST /ask` |
+| CLI question client | Available through `make ask` |
+| Local document ingestion | Markdown and text files |
+| Chunking | Configurable size and overlap |
+| Embeddings | Local Ollama embedding model |
+| Vector retrieval | Qdrant collection |
+| Answer generation | Local Ollama chat model |
+| Source reporting | Returned in the `/ask` response |
+| Retrieval evaluation | Smoke baseline with `Recall@k` and MRR |
+| PostgreSQL | Provisioned for future document lifecycle work |
 
-## Arquitetura
+## Architecture
 
 ```mermaid
 flowchart LR
-    CLI[CLI / cliente HTTP] --> API[FastAPI]
-    API --> QDRANT[(Qdrant)]
-    API --> CHAT[Ollama / modelo de chat]
+    subgraph Client["Client interfaces"]
+        CLI["CLI / make ask"]
+        HTTP["HTTP client"]
+    end
 
-    DOCS[data/inbox] --> INGEST[Worker de ingestão]
-    INGEST --> EMBED[Ollama / embeddings]
-    INGEST --> QDRANT
+    subgraph API["FastAPI application"]
+        ASK["POST /ask"]
+        USECASE["AnswerQuestion"]
+        HEALTH["GET /health"]
+    end
 
-    POSTGRES[(PostgreSQL + pgvector)]
+    subgraph Retrieval["Retrieval layer"]
+        PORT["Retriever port"]
+        QCLIENT["QdrantRagClient"]
+    end
+
+    subgraph Ingestion["Ingestion worker"]
+        INBOX["data/inbox"]
+        SAMPLES["data/samples"]
+        WORKER["apps/worker/ingest.py"]
+        CHUNKING["chunk_text"]
+    end
+
+    subgraph Models["Local models"]
+        EMBED["Ollama embeddings"]
+        CHAT["Ollama chat"]
+    end
+
+    subgraph Stores["Local stores"]
+        QDRANT[("Qdrant")]
+        POSTGRES[("PostgreSQL + pgvector")]
+    end
+
+    CLI --> ASK
+    HTTP --> ASK
+    ASK --> USECASE
+    USECASE --> PORT
+    PORT --> QCLIENT
+    QCLIENT --> EMBED
+    QCLIENT --> QDRANT
+    USECASE --> CHAT
+    HEALTH --> API
+
+    INBOX --> WORKER
+    SAMPLES --> WORKER
+    WORKER --> CHUNKING
+    CHUNKING --> EMBED
+    EMBED --> QDRANT
+
+    POSTGRES -. "reserved for document lifecycle" .- WORKER
 ```
 
-O fluxo básico é:
+## Runtime Flow
 
-1. `make ingest` lê documentos, cria chunks, gera embeddings e grava os vetores
-   no Qdrant.
-2. `POST /ask` busca chunks relevantes no Qdrant, monta contexto e pede a
-   resposta ao Ollama.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant User
+    participant API as FastAPI /ask
+    participant AQ as AnswerQuestion
+    participant Retriever
+    participant OllamaE as Ollama embeddings
+    participant Qdrant
+    participant OllamaC as Ollama chat
 
-A direção arquitetural, os critérios de qualidade e o plano incremental de
-evolução estão documentados em
-[Arquitetura e Roadmap de Implementação](docs/architecture-roadmap.md).
+    User->>API: POST question
+    API->>AQ: execute(question)
+    AQ->>Retriever: search(question, top_k)
+    Retriever->>OllamaE: embed(question)
+    OllamaE-->>Retriever: query vector
+    Retriever->>Qdrant: query_points
+    Qdrant-->>Retriever: retrieved chunks
+    Retriever-->>AQ: chunks with sources
+    AQ->>OllamaC: generate(prompt with context)
+    OllamaC-->>AQ: answer
+    AQ-->>API: answer + sources
+    API-->>User: JSON response
+```
+
+## Engineering Posture
+
+| Principle | Current implementation |
+| --- | --- |
+| Local-first by default | Ollama and Qdrant run locally |
+| Small public contracts | `Retriever`, `Generator`, and response models are explicit |
+| Reproducible checks | `make check` runs lint, typecheck, tests, and Compose config |
+| Measurable RAG changes | Retrieval evaluation emits `Recall@k`, MRR, and per-case sources |
+| Incremental architecture | Roadmap documents phases, constraints, and out-of-scope items |
+| Privacy-aware defaults | Logs and reports avoid document contents by default |
+
+## Latest Local Evidence
+
+The following evidence was collected from a local E2E run on 2026-06-24:
+
+| Check | Result |
+| --- | --- |
+| Sample ingestion | `2/2` files, `2` chunks |
+| Retrieval evaluation | `Recall@2 = 1.0`, `MRR = 0.75`, `2` cases |
+| API health | HTTP 200 |
+| API question flow | HTTP 200, answer `Farol Verde.` |
+| CLI question flow | answer `Farol Verde.` |
+| Automated checks | Ruff, mypy, pytest, and Compose config passed |
+
+This is a smoke baseline, not a production benchmark.
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [Architecture Roadmap](docs/architecture-roadmap.md) | System direction, phases, risks, and planned evolution |
+| [Retrieval Evaluation](docs/retrieval-evaluation.md) | Evaluation scope, metrics, commands, evidence, and review guidance |
 
 ## Stack
 
-- Python 3.11+
-- FastAPI e Pydantic
-- Ollama
-- Qdrant
-- PostgreSQL com pgvector
-- pytest, Ruff e mypy
-- uv
-- Docker Compose
+| Layer | Technology |
+| --- | --- |
+| Language | Python 3.11+ |
+| API | FastAPI, Pydantic |
+| Local models | Ollama |
+| Vector store | Qdrant |
+| Future system of record | PostgreSQL with pgvector |
+| Quality | pytest, Ruff, mypy |
+| Tooling | uv, Docker Compose, Make |
 
-## Pré-requisitos
+## Requirements
 
-- [Python 3.11 ou superior](https://www.python.org/)
+- [Python 3.11 or higher](https://www.python.org/)
 - [uv](https://docs.astral.sh/uv/)
-- [Docker com Compose](https://docs.docker.com/compose/)
+- [Docker with Compose](https://docs.docker.com/compose/)
 - [Ollama](https://ollama.com/)
 
-## Início rápido
+## Quick Start
 
-Instale as dependências:
+Install dependencies:
 
 ```bash
 uv sync
 ```
 
-Baixe os modelos usados pelo projeto:
+Pull the local models used by default:
 
 ```bash
 ollama pull llama3.2:1b
 ollama pull nomic-embed-text
 ```
 
-Inicie PostgreSQL e Qdrant:
+Start PostgreSQL and Qdrant:
 
 ```bash
 make up
 make ps
 ```
 
-Inicie a API em outro terminal:
+Start the API in another terminal:
 
 ```bash
 make api
 ```
 
-Valide o serviço:
+Validate the service:
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-A documentação interativa da API fica disponível em
-<http://localhost:8000/docs>.
+Interactive API documentation is available at:
 
-## Consultar o assistente
-
-Com a API e o Ollama em execução:
-
-```bash
-make ask q="Qual é o status do projeto?"
+```text
+http://localhost:8000/docs
 ```
 
-Também é possível usar a API diretamente:
+## Ask a Question
+
+With the API and Ollama running:
+
+```bash
+make ask q="Qual e o status do projeto?"
+```
+
+You can also call the API directly:
 
 ```bash
 curl -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{"question":"Qual é o status do projeto?"}'
+  -d '{"question":"Qual e o status do projeto?"}'
 ```
 
-Resposta esperada:
+Response shape:
 
 ```json
 {
   "answer": "...",
   "sources": [
     {
-      "chunk_id": "…",
+      "chunk_id": "...",
       "document_id": null,
       "file_path": "data/inbox/notes/status.md",
       "chunk_index": 0,
@@ -131,99 +244,132 @@ Resposta esperada:
 }
 ```
 
-## Ingestão de documentos
+## Ingest Documents
 
-Adicione arquivos `.md`, `.markdown` ou `.txt` em `data/inbox` e execute:
+Add `.md`, `.markdown`, or `.txt` files to `data/inbox` and run:
 
 ```bash
 make ingest
 ```
 
-O pipeline:
+To load the versioned smoke-test documents:
 
-1. ignora extensões não suportadas e arquivos vazios;
-2. divide o conteúdo em chunks;
-3. gera embeddings com o modelo configurado no Ollama;
-4. cria a coleção no Qdrant quando necessário;
-5. persiste texto, vetor, caminho, nome do arquivo e índice do chunk.
+```bash
+make ingest-samples
+```
 
-Os identificadores dos pontos são determinísticos por caminho e índice. Uma
-nova ingestão do mesmo conteúdo atualiza os pontos correspondentes.
+The ingestion pipeline:
 
-O Qdrant expõe a API em <http://localhost:6333> e o dashboard em
-<http://localhost:6333/dashboard>.
+1. ignores unsupported extensions and empty files;
+2. splits content into chunks;
+3. generates embeddings with the configured Ollama model;
+4. creates the Qdrant collection when needed;
+5. stores text, vector, file path, file name, and chunk index.
 
-## Configuração
+Point IDs are deterministic by file path and chunk index. Re-ingesting the same
+path updates the corresponding points.
 
-O arquivo `.env.example` documenta as variáveis disponíveis. A aplicação lê
-variáveis do ambiente do processo; exporte os valores antes de executar os
-comandos quando quiser substituir os padrões.
+## Evaluate Retrieval
 
-| Variável | Padrão | Finalidade |
+Run the retrieval baseline after starting local dependencies and ingesting the
+sample documents:
+
+```bash
+make eval
+```
+
+Use a different retrieval limit when comparing ranking behavior:
+
+```bash
+make eval args="--top-k 8"
+```
+
+The evaluator loads `data/evaluation/retrieval-baseline.json`, queries the
+configured retriever, and prints a JSON report with `Recall@k`, MRR, and source
+metadata.
+
+## Configuration
+
+The application reads settings from process environment variables. `.env.example`
+documents the available values.
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `APP_ENV` | `local` | Reservado para identificar o ambiente. |
-| `API_BASE_URL` | `http://localhost:8000` | Endereço usado pelo cliente CLI. |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Endereço do Ollama. |
-| `OLLAMA_CHAT_MODEL` | `llama3.2:1b` | Modelo usado pelo endpoint `/ask`. |
-| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Modelo usado na ingestão. |
-| `QDRANT_URL` | `http://localhost:6333` | Endereço do Qdrant. |
-| `QDRANT_COLLECTION` | `devmind_documents` | Coleção vetorial do projeto. |
-| `RAG_CHUNK_SIZE` | `1000` | Tamanho máximo de cada chunk, em caracteres. |
-| `RAG_CHUNK_OVERLAP` | `100` | Sobreposição entre chunks, em caracteres. |
-| `POSTGRES_DSN` | consulte `.env.example` | Reservado para persistência futura. |
+| `APP_ENV` | `local` | Reserved environment label |
+| `API_BASE_URL` | `http://localhost:8000` | Base URL used by the CLI client |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint |
+| `OLLAMA_CHAT_MODEL` | `llama3.2:1b` | Chat model used by `/ask` |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model used by ingestion and retrieval |
+| `QDRANT_URL` | `http://localhost:6333` | Qdrant endpoint |
+| `QDRANT_COLLECTION` | `devmind_documents` | Vector collection name |
+| `RAG_CHUNK_SIZE` | `1000` | Maximum chunk size in characters |
+| `RAG_CHUNK_OVERLAP` | `100` | Character overlap between chunks |
+| `POSTGRES_DSN` | see `.env.example` | Reserved for future persistence |
 
-`RAG_CHUNK_OVERLAP` deve ser menor que `RAG_CHUNK_SIZE`.
+`RAG_CHUNK_OVERLAP` must be smaller than `RAG_CHUNK_SIZE`.
 
-## Comandos
+## Commands
 
-| Comando | Descrição |
+| Command | Description |
 | --- | --- |
-| `make up` | Inicia os serviços do Docker Compose. |
-| `make down` | Encerra os serviços. |
-| `make logs` | Acompanha os logs dos serviços. |
-| `make ps` | Exibe o estado dos containers. |
-| `make api` | Inicia a API em modo de desenvolvimento. |
-| `make ask q="..."` | Envia uma pergunta para a API. |
-| `make ingest` | Indexa os documentos de `data/inbox`. |
-| `make test` | Executa os testes automatizados. |
-| `make lint` | Executa a análise estática com Ruff. |
-| `make typecheck` | Executa a checagem de tipos com mypy. |
-| `make check` | Executa lint, typecheck, testes e validação do Compose. |
+| `make up` | Start Docker Compose services |
+| `make down` | Stop Docker Compose services |
+| `make logs` | Follow service logs |
+| `make ps` | Show container status |
+| `make api` | Start the development API |
+| `make ask q="..."` | Send a question to the API |
+| `make ingest` | Index documents from `data/inbox` |
+| `make ingest-samples` | Index sample documents from `data/samples` |
+| `make eval` | Run the retrieval smoke baseline |
+| `make test` | Run automated tests |
+| `make lint` | Run Ruff |
+| `make typecheck` | Run mypy |
+| `make check` | Run lint, typecheck, tests, and Compose config |
 
-## Estrutura do projeto
+## Project Layout
 
 ```text
 apps/
-├── api/                # API HTTP e cliente CLI
-└── worker/             # Pipeline de ingestão
+├── api/                # HTTP API and CLI client
+└── worker/             # Ingestion and evaluation entrypoints
 data/
-├── inbox/              # Documentos aguardando ingestão
-└── processed/          # Área reservada para documentos processados
+├── evaluation/         # Versioned retrieval datasets
+├── inbox/              # Local documents waiting for ingestion
+├── processed/          # Reserved processed-document area
+└── samples/            # Versioned sample documents for smoke tests
+docs/
+├── architecture-roadmap.md
+└── retrieval-evaluation.md
 packages/
-├── rag/                # Chunking e integração com Qdrant
-└── shared/             # Integrações compartilhadas, como Ollama
-tests/                  # Testes automatizados
+├── application/        # Use cases and application ports
+├── domain/             # Domain models
+├── rag/                # Chunking, Qdrant integration, evaluation
+└── shared/             # Shared integrations and configuration
+tests/                  # Automated tests
 ```
 
-## Desenvolvimento e validação
+## Development
 
-Antes de abrir uma mudança:
+Before opening a change:
 
 ```bash
 make check
 ```
 
-Mantenha as alterações pequenas, inclua testes para mudanças de comportamento
-e nunca versione credenciais ou dados sensíveis.
+Changes should be small, tested, and explicit about public contract impact.
+Do not commit secrets, private documents, real `.env` files, or sensitive
+content from indexed data.
 
-## Limitações conhecidas
+## Known Limitations
 
-- A ingestão não remove pontos antigos quando um documento passa a ter menos
-  chunks ou é excluído.
-- PostgreSQL está provisionado, mas ainda não participa dos fluxos da aplicação.
-- Não há autenticação ou autorização; execute apenas em ambiente local confiável.
-- Observabilidade e processamento incremental ainda são básicos.
+| Limitation | Current impact |
+| --- | --- |
+| Ingestion is not document-lifecycle aware | Old chunks are not removed when files shrink or disappear |
+| PostgreSQL is provisioned but unused | Document versioning and ingestion runs are not persisted yet |
+| No authentication or authorization | Run only in a trusted local environment |
+| Retrieval baseline is small | Metrics are smoke signals, not broad quality claims |
+| Readiness and observability are basic | Health does not yet represent dependency health |
 
-## Licença
+## License
 
-Este repositório ainda não define uma licença de distribuição.
+This repository does not define a distribution license yet.
