@@ -102,6 +102,8 @@ class QdrantRagClient:
             raise ValueError("limit must be greater than zero")
         if not query.strip():
             return []
+        if not self._client.collection_exists(self.collection_name):
+            return []
 
         query_vector = await self._get_embedder().embed(query)
         response = self._client.query_points(

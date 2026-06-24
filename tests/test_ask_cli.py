@@ -11,7 +11,7 @@ def test_ask_api_posts_question_and_returns_answer() -> None:
         assert request.method == "POST"
         assert request.url == "http://api.test/ask"
         assert request.read() == b'{"question":"qual e o status?"}'
-        return httpx.Response(200, json={"answer": "ok"})
+        return httpx.Response(200, json={"answer": "ok", "sources": []})
 
     transport = httpx.MockTransport(handler)
 

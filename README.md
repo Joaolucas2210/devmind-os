@@ -3,14 +3,13 @@
 Assistente local e experimental para organizar conhecimento técnico e consultar
 modelos de linguagem sem enviar dados para provedores externos.
 
-O projeto está em fase de MVP. Hoje ele oferece uma API de perguntas conectada
-ao Ollama e um pipeline independente para indexar documentos locais no Qdrant.
-A recuperação dos documentos indexados ainda não está integrada ao endpoint
-`/ask`.
+O projeto está em fase de MVP. Hoje ele oferece uma API de perguntas que
+recupera documentos indexados no Qdrant e usa o Ollama para gerar respostas
+com contexto local.
 
 ## Capacidades atuais
 
-- API HTTP com health check e geração de respostas via Ollama.
+- API HTTP com health check e respostas RAG via Qdrant e Ollama.
 - Cliente de linha de comando para consultar a API.
 - Ingestão de arquivos Markdown e texto.
 - Chunking configurável com sobreposição.
@@ -23,20 +22,22 @@ A recuperação dos documentos indexados ainda não está integrada ao endpoint
 ```mermaid
 flowchart LR
     CLI[CLI / cliente HTTP] --> API[FastAPI]
+    API --> QDRANT[(Qdrant)]
     API --> CHAT[Ollama / modelo de chat]
 
     DOCS[data/inbox] --> INGEST[Worker de ingestão]
     INGEST --> EMBED[Ollama / embeddings]
-    INGEST --> QDRANT[(Qdrant)]
+    INGEST --> QDRANT
 
     POSTGRES[(PostgreSQL + pgvector)]
 ```
 
-O fluxo de consulta e o fluxo RAG são independentes nesta versão:
+O fluxo básico é:
 
-1. `POST /ask` envia a pergunta diretamente ao modelo de chat.
-2. `make ingest` lê documentos, cria chunks, gera embeddings e grava os vetores
+1. `make ingest` lê documentos, cria chunks, gera embeddings e grava os vetores
    no Qdrant.
+2. `POST /ask` busca chunks relevantes no Qdrant, monta contexto e pede a
+   resposta ao Ollama.
 
 A direção arquitetural, os critérios de qualidade e o plano incremental de
 evolução estão documentados em
@@ -117,7 +118,16 @@ Resposta esperada:
 
 ```json
 {
-  "answer": "..."
+  "answer": "...",
+  "sources": [
+    {
+      "chunk_id": "…",
+      "document_id": null,
+      "file_path": "data/inbox/notes/status.md",
+      "chunk_index": 0,
+      "score": 0.91
+    }
+  ]
 }
 ```
 
@@ -208,7 +218,6 @@ e nunca versione credenciais ou dados sensíveis.
 
 ## Limitações conhecidas
 
-- O endpoint `/ask` ainda não recupera contexto do Qdrant.
 - A ingestão não remove pontos antigos quando um documento passa a ter menos
   chunks ou é excluído.
 - PostgreSQL está provisionado, mas ainda não participa dos fluxos da aplicação.
