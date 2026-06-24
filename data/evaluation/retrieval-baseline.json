@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "rag-smoke-codename",
+      "question": "Qual e o codinome operacional do teste RAG?",
+      "expected_facts": ["Farol Verde"],
+      "expected_sources": [
+        {
+          "file_path": "data/samples/rag-smoke-test.md",
+          "chunk_index": 0
+        }
+      ]
+    },
+    {
+      "id": "project-status-mvp",
+      "question": "Qual e o status atual do DevMind OS?",
+      "expected_facts": ["MVP local experimental"],
+      "expected_sources": [
+        {
+          "file_path": "data/samples/devmind-status.md",
+          "chunk_index": 0
+        }
+      ]
+    }
+  ]
+}
