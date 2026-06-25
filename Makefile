@@ -15,8 +15,7 @@ ps:
 api:
 	uv run uvicorn apps.api.main:app --reload --port 8000
 
-worker:
-	cd apps/worker && uv run python worker.py
+worker: ingest
 
 ingest:
 	cd apps/worker && uv run python ingest.py

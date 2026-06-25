@@ -38,6 +38,7 @@ def create_app(
     settings: Settings | None = None,
     generator: Generator | None = None,
     retriever: Retriever | None = None,
+    readiness_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     effective_settings = settings or get_settings()
     effective_generator = generator or build_generator(effective_settings)
@@ -49,6 +50,17 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/ready")
+    async def ready() -> dict[str, str]:
+        try:
+            await check_readiness(effective_settings, transport=readiness_transport)
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Dependencias indisponiveis.",
+            ) from exc
         return {"status": "ok"}
 
     @app.post("/ask", response_model=AskResponse)
@@ -90,6 +102,19 @@ def create_app(
         )
 
     return app
+
+
+async def check_readiness(
+    settings: Settings,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> None:
+    ollama_url = str(settings.ollama_base_url).rstrip("/")
+    qdrant_url = str(settings.qdrant_url).rstrip("/")
+    async with httpx.AsyncClient(timeout=2, transport=transport) as client:
+        for url in (f"{ollama_url}/api/tags", f"{qdrant_url}/collections"):
+            response = await client.get(url)
+            response.raise_for_status()
 
 
 app = create_app()
