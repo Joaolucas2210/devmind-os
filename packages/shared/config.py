@@ -22,9 +22,7 @@ class Settings(BaseSettings):
     qdrant_collection: str = Field(default="devmind_documents", min_length=1)
     rag_chunk_size: int = Field(default=1000, gt=0)
     rag_chunk_overlap: int = Field(default=100, ge=0)
-    postgres_dsn: str = (
-        "postgresql+psycopg://devmind:devmind@localhost:5433/devmind"
-    )
+    postgres_dsn: str = "postgresql://devmind:devmind@localhost:5433/devmind"
 
     @model_validator(mode="after")
     def validate_chunking(self) -> Self:

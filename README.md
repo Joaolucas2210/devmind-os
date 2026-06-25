@@ -203,7 +203,11 @@ Validate the service:
 
 ```bash
 curl http://localhost:8000/health
+curl http://localhost:8000/ready
 ```
+
+`/health` reports API liveness. `/ready` checks whether Ollama and Qdrant are
+reachable.
 
 Interactive API documentation is available at:
 
@@ -370,7 +374,7 @@ content from indexed data.
 | PostgreSQL is provisioned but unused | No document catalog, job API, or rebuild state exists yet |
 | No authentication or authorization | Run only in a trusted local environment |
 | Retrieval baseline is small | Metrics are smoke signals, not broad quality claims |
-| Readiness and observability are basic | Health does not yet represent dependency health |
+| Observability is basic | No structured request metrics or traces yet |
 
 ## License
 

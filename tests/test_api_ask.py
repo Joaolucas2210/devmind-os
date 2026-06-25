@@ -146,3 +146,43 @@ def test_create_app_preserves_health_contract() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_ready_returns_ok_when_dependencies_respond() -> None:
+    class FakeOllamaClient:
+        async def generate(self, _prompt: str) -> str:
+            return "ok"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    response = TestClient(
+        create_app(
+            generator=FakeOllamaClient(),
+            retriever=FakeRetriever(),
+            readiness_transport=httpx.MockTransport(handler),
+        )
+    ).get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_ready_returns_503_when_dependency_fails() -> None:
+    class FakeOllamaClient:
+        async def generate(self, _prompt: str) -> str:
+            return "ok"
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, json={})
+
+    response = TestClient(
+        create_app(
+            generator=FakeOllamaClient(),
+            retriever=FakeRetriever(),
+            readiness_transport=httpx.MockTransport(handler),
+        )
+    ).get("/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Dependencias indisponiveis."}
