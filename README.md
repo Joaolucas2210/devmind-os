@@ -264,10 +264,12 @@ The ingestion pipeline:
 2. splits content into chunks;
 3. generates embeddings with the configured Ollama model;
 4. creates the Qdrant collection when needed;
-5. stores text, vector, file path, file name, and chunk index.
+5. stores text, vector, file path, file name, chunk index, document ID,
+   content hash, and document version ID.
+6. removes indexed chunks for deleted or emptied files under the ingested path.
 
 Point IDs are deterministic by file path and chunk index. Re-ingesting the same
-path updates the corresponding points.
+path replaces the current chunks for that path.
 
 ## Evaluate Retrieval
 
@@ -364,8 +366,8 @@ content from indexed data.
 
 | Limitation | Current impact |
 | --- | --- |
-| Ingestion is not document-lifecycle aware | Old chunks are not removed when files shrink or disappear |
-| PostgreSQL is provisioned but unused | Document versioning and ingestion runs are not persisted yet |
+| Ingestion lifecycle is Qdrant-only | Document versions and ingestion runs are not persisted in PostgreSQL |
+| PostgreSQL is provisioned but unused | No document catalog, job API, or rebuild state exists yet |
 | No authentication or authorization | Run only in a trusted local environment |
 | Retrieval baseline is small | Metrics are smoke signals, not broad quality claims |
 | Readiness and observability are basic | Health does not yet represent dependency health |

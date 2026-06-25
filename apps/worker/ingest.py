@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import sys
 import uuid
 from dataclasses import dataclass
@@ -26,6 +27,13 @@ class Embedder(Protocol):
 
 class ChunkStore(Protocol):
     def upsert_chunks(self, chunks: list[EmbeddedChunk]) -> int: ...
+
+    def delete_missing_file_paths(
+        self,
+        active_file_paths: set[str],
+        *,
+        path_prefix: str,
+    ) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -68,11 +76,14 @@ async def ingest_inbox(
     )
 
     embedded_chunks: list[EmbeddedChunk] = []
+    active_file_paths: set[str] = set()
     files_ingested = 0
 
     for path in documents:
+        file_path = _relative_file_path(path)
+        text = path.read_text(encoding="utf-8")
         chunks = chunk_text(
-            path.read_text(encoding="utf-8"),
+            text,
             chunk_size=effective_chunk_size,
             chunk_overlap=effective_chunk_overlap,
         )
@@ -80,7 +91,10 @@ async def ingest_inbox(
             continue
 
         files_ingested += 1
-        file_path = _relative_file_path(path)
+        active_file_paths.add(file_path)
+        document_id = _document_id(file_path)
+        content_hash = _content_hash(text)
+        document_version_id = _document_version_id(document_id, content_hash)
         for chunk_index, chunk in enumerate(chunks):
             embedded_chunks.append(
                 EmbeddedChunk(
@@ -91,11 +105,18 @@ async def ingest_inbox(
                         "file_path": file_path,
                         "file_name": path.name,
                         "chunk_index": chunk_index,
+                        "document_id": document_id,
+                        "content_hash": content_hash,
+                        "document_version_id": document_version_id,
                     },
                 )
             )
 
     chunks_ingested = qdrant.upsert_chunks(embedded_chunks)
+    qdrant.delete_missing_file_paths(
+        active_file_paths,
+        path_prefix=_path_prefix(inbox_dir),
+    )
     return IngestSummary(
         files_seen=len(documents),
         files_ingested=files_ingested,
@@ -141,8 +162,25 @@ def _relative_file_path(path: Path) -> str:
         return path.name
 
 
+def _path_prefix(path: Path) -> str:
+    prefix = _relative_file_path(path.resolve())
+    return f"{prefix.rstrip('/')}/" if prefix else ""
+
+
 def _point_id(file_path: str, chunk_index: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{file_path}:{chunk_index}"))
+
+
+def _document_id(file_path: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"document:{file_path}"))
+
+
+def _content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _document_version_id(document_id: str, content_hash: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{document_id}:{content_hash}"))
 
 
 if __name__ == "__main__":
