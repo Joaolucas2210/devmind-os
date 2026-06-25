@@ -33,7 +33,11 @@ class QdrantClientProtocol(Protocol):
 
     def upsert(self, **kwargs: Any) -> Any: ...
 
+    def delete(self, **kwargs: Any) -> Any: ...
+
     def query_points(self, **kwargs: Any) -> models.QueryResponse: ...
+
+    def scroll(self, **kwargs: Any) -> tuple[list[models.Record], Any]: ...
 
 
 class QdrantRagClient:
@@ -80,6 +84,7 @@ class QdrantRagClient:
             return 0
 
         self.ensure_collection(len(chunks[0].vector))
+        self.delete_file_paths(_file_paths(chunks))
         points = [
             models.PointStruct(
                 id=chunk.id,
@@ -96,6 +101,36 @@ class QdrantRagClient:
             points=points,
         )
         return len(points)
+
+    def delete_missing_file_paths(
+        self,
+        active_file_paths: set[str],
+        *,
+        path_prefix: str,
+    ) -> int:
+        if not self._client.collection_exists(self.collection_name):
+            return 0
+
+        indexed_file_paths = self._indexed_file_paths(path_prefix=path_prefix)
+        return self.delete_file_paths(indexed_file_paths - active_file_paths)
+
+    def delete_file_paths(self, file_paths: set[str]) -> int:
+        for file_path in sorted(file_paths):
+            self._client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="file_path",
+                                match=models.MatchValue(value=file_path),
+                            )
+                        ]
+                    )
+                ),
+                wait=True,
+            )
+        return len(file_paths)
 
     async def search(self, query: str, *, limit: int) -> list[RetrievedChunk]:
         if limit <= 0:
@@ -125,6 +160,26 @@ class QdrantRagClient:
             self._embedder = OllamaClient()
         return self._embedder
 
+    def _indexed_file_paths(self, *, path_prefix: str) -> set[str]:
+        file_paths: set[str] = set()
+        offset: Any = None
+        while True:
+            # ponytail: O(n) payload scan; replace with a catalog table when Postgres lifecycle lands.
+            records, offset = self._client.scroll(
+                collection_name=self.collection_name,
+                limit=100,
+                offset=offset,
+                with_payload=["file_path"],
+                with_vectors=False,
+            )
+            for record in records:
+                payload = record.payload or {}
+                file_path = payload.get("file_path")
+                if isinstance(file_path, str) and file_path.startswith(path_prefix):
+                    file_paths.add(file_path)
+            if offset is None:
+                return file_paths
+
 
 def _retrieved_chunk_from_point(point: models.ScoredPoint) -> RetrievedChunk | None:
     payload = point.payload or {}
@@ -152,3 +207,11 @@ def _retrieved_chunk_from_point(point: models.ScoredPoint) -> RetrievedChunk | N
             score=float(point.score),
         ),
     )
+
+
+def _file_paths(chunks: list[EmbeddedChunk]) -> set[str]:
+    return {
+        file_path
+        for chunk in chunks
+        if isinstance(file_path := chunk.metadata.get("file_path"), str)
+    }
